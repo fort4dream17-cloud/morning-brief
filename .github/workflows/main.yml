@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r github_morning_brief/requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Create Notion morning brief
         env:
@@ -32,4 +32,4 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python github_morning_brief/morning_brief.py
+        run: python morning_brief.py
