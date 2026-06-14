@@ -379,6 +379,8 @@ def notion_request(method: str, url: str, token: str, payload: dict[str, Any] | 
         if response.status_code == 429:
             time.sleep(2 + attempt)
             continue
+        if response.status_code >= 400:
+            print(f"Notion API error {response.status_code}: {response.text[:4000]}")
         response.raise_for_status()
         return response.json()
     response.raise_for_status()
@@ -402,10 +404,28 @@ def page_properties(brief: dict[str, str], today: dt.date, us_close_date: dt.dat
         "Brief": {"title": rich_text(brief["title"])},
         "Date": {"date": {"start": today.isoformat()}},
         "US Close Date": {"date": {"start": us_close_date.isoformat()}},
+        "Data Cutoff KST": {"date": {"start": dt.datetime.now(KST).isoformat()}},
+        "Regime": {"select": notion_select(regime["regime"])},
+        "Primary Driver": {"multi_select": notion_multi(regime["primary_driver"])},
+        "Rates Signal": {"select": notion_select(regime["rates_signal"])},
+        "FX Signal": {"select": notion_select(regime["fx_signal"])},
+        "Commodity Signal": {"select": notion_select(regime["commodity_signal"])},
+        "Korea Bias": {"select": notion_select(regime["korea_bias"])},
+        "Action": {"multi_select": notion_multi(regime["action"])},
+        "Conviction": {"select": notion_select(regime["conviction"])},
+        "News Urgency": {"select": notion_select("Important")},
+        "News Basis": {"select": notion_select("Market Price Driver")},
+        "Bloomberg Check": {"select": notion_select("Unavailable")},
+        "Source Confidence": {"select": notion_select("Single source")},
+        "Sources Checked": {"multi_select": notion_multi(["Yahoo Finance", "CNBC"])},
+        "News Tags": {"multi_select": notion_multi(["Macro"])},
         "One-line Conclusion": {"rich_text": rich_text(brief["conclusion"])},
         "Top 5 Headlines": {"rich_text": rich_text(brief["top_headlines"])},
+        "Market Driver News": {"rich_text": rich_text(brief["market_driver_news"])},
         "Source Map": {"rich_text": rich_text(brief["source_map"])},
+        "Unconfirmed Items": {"rich_text": rich_text(brief["unconfirmed"] or "없음")},
         "Telegram Sent": {"checkbox": False},
+        "Status": {"status": {"name": "완료"}},
     }
 
 
@@ -525,7 +545,24 @@ def create_notion_page(token: str, database_id: str, properties: dict[str, Any],
         "properties": properties,
         "children": markdown_to_blocks(body),
     }
-    return notion_request("POST", "https://api.notion.com/v1/pages", token, payload)
+    try:
+        return notion_request("POST", "https://api.notion.com/v1/pages", token, payload)
+    except requests.HTTPError:
+        print("Retrying Notion creation with title-only properties.")
+        fallback = {
+            "parent": {"database_id": database_id},
+            "properties": {"Brief": {"title": rich_text(properties["Brief"]["title"][0]["text"]["content"])}},
+        }
+        page = notion_request("POST", "https://api.notion.com/v1/pages", token, fallback)
+        blocks = markdown_to_blocks(body)
+        for start in range(0, len(blocks), 50):
+            notion_request(
+                "PATCH",
+                f"https://api.notion.com/v1/blocks/{page['id']}/children",
+                token,
+                {"children": blocks[start : start + 50]},
+            )
+        return page
 
 
 def run(dry_run: bool = False) -> None:
@@ -555,13 +592,22 @@ def run(dry_run: bool = False) -> None:
     if not token:
         raise SystemExit("Missing NOTION_TOKEN")
 
-    existing = find_existing_page(token, database_id, today)
-    if existing:
-        archive_page(token, existing)
+    notion_url = None
+    try:
+        existing = find_existing_page(token, database_id, today)
+        if existing:
+            archive_page(token, existing)
+        created = create_notion_page(
+            token,
+            database_id,
+            page_properties(brief, today, us_close_date, regime),
+            brief["body"],
+        )
+        notion_url = created.get("url")
+        print(f"Created Notion page: {notion_url}")
+    except Exception as exc:
+        print(f"Notion upload failed; Telegram will still be sent: {type(exc).__name__}: {exc}")
 
-    created = create_notion_page(token, database_id, page_properties(brief, today, us_close_date, regime), brief["body"])
-    notion_url = created.get("url")
-    print(f"Created Notion page: {notion_url}")
     send_telegram(brief, notion_url)
 
 
