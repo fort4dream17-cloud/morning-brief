@@ -267,9 +267,9 @@ def deterministic_brief(today: dt.date, us_close_date: dt.date, quotes: list[Quo
 
     top_lines = []
     for idx, item in enumerate(headlines[:5], 1):
-        top_lines.append(f"({idx}) {item['title']}
-- Source: {item['source']}
-- News link: {item['link']}")
+        
+ 
+       top_lines.append(f"({idx}) {item['title']} | Source: {item['source']} | News link: {item['link']}")
 
     semis_note = "SOX " + (fmt_pct(sox.pct_change) if sox else "N/A")
     body = f"""# PM Snapshot
@@ -285,9 +285,9 @@ def deterministic_brief(today: dt.date, us_close_date: dt.date, quotes: list[Quo
 ## Key Equities
 {markdown_table(quotes, ['equity'])}
 
-# Market Interpretation
-- 금리 신호: {regime['rates_signal']}. 10년물 금리 변화가 성장주 멀티플과 한국 금리 민감주에 미치는 영향을 우선 확인합니다.
-- FX 신호: {regime['fx_signal']}. 달러 방향은 외국인 수급과 원화 민감 업종에 직접 연결됩니다.
+
+ 
+       top_lines.append(f"({idx}) {item['title']} | Source: {item['source']} | News link: {item['link']}")
 - 원자재 신호: {regime['commodity_signal']}. 유가 급등락은 인플레이션 기대와 에너지/운송/화학 마진을 동시에 건드립니다.
 - 반도체 체크: {semis_note}. Nasdaq 대비 SOX 상대강도가 한국 반도체 오프닝 톤의 첫 번째 단서입니다.
 
