@@ -267,7 +267,9 @@ def deterministic_brief(today: dt.date, us_close_date: dt.date, quotes: list[Quo
 
     top_lines = []
     for idx, item in enumerate(headlines[:5], 1):
-        top_lines.append(f"{idx}. {item['title']} ({item['source']})")
+        top_lines.append(f"({idx}) {item['title']}
+- Source: {item['source']}
+- News link: {item['link']}")
 
     semis_note = "SOX " + (fmt_pct(sox.pct_change) if sox else "N/A")
     body = f"""# PM Snapshot
@@ -338,7 +340,7 @@ def openai_enhance(base: dict[str, str], quotes: list[Quote], headlines: list[di
         "instruction": (
             "Rewrite the Korean morning market brief for a global equity portfolio manager. "
             "Keep exact numbers from the base brief, do not invent data, preserve source caveats, "
-            "and make the format concise: PM Snapshot, Dashboard Notes, Top News, Korea Read-through, Portfolio Implication, Questions."
+            "Use this exact visible order: @Major Issues, US Market Closing Recap, Index Close, Cross-Asset Prices, Key Stocks, One-line View, Portfolio Check, Sources. Translate all section labels and Source/News link labels into natural Korean. For every major issue keep the original headline and URL, then add one short market-impact sentence starting with >>. Show each index and asset on its own bullet line with exact close, point change and percent change. Keep generous blank lines for Telegram readability."
         ),
     }
     payload = {
