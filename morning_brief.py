@@ -501,8 +501,8 @@ def telegram_chunks(text: str, size: int = 3600) -> list[str]:
 
 
 def send_telegram(brief: dict[str, str], notion_url: str | None = None) -> None:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
     if not token or not chat_id:
         print("Telegram skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.")
         return
@@ -587,8 +587,8 @@ def run(dry_run: bool = False) -> None:
         print(f"\nSaved: {output_path}")
         return
 
-    token = os.environ.get("NOTION_TOKEN")
-    database_id = os.environ.get("NOTION_DATABASE_ID") or "b9307fc89d3e438986c7c0341cc1984d"
+    token = (os.environ.get("NOTION_TOKEN") or "").strip()
+    database_id = (os.environ.get("NOTION_DATABASE_ID") or "").strip() or "b9307fc89d3e438986c7c0341cc1984d"
     if not token:
         raise SystemExit("Missing NOTION_TOKEN")
 
