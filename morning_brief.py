@@ -502,7 +502,7 @@ def telegram_chunks(text: str, size: int = 3600) -> list[str]:
 
 def send_telegram(brief: dict[str, str], notion_url: str | None = None) -> None:
     token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip(); updates = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", timeout=30).json().get("result", []); latest = (updates[-1].get("message") or updates[-1].get("channel_post")) if updates else None; chat_id = str(latest["chat"]["id"]) if latest else chat_id
     if not token or not chat_id:
         print("Telegram skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing.")
         return
