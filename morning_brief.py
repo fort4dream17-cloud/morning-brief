@@ -80,7 +80,7 @@ class Quote:
 def request_json(url: str, *, params: dict[str, str] | None = None, timeout: int = 20) -> dict[str, Any]:
     headers = {"User-Agent": "morning-brief/1.0"}
     response = requests.get(url, params=params, headers=headers, timeout=timeout)
-    response.raise_for_status()
+    print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
     return response.json()
 
 
@@ -131,7 +131,7 @@ def fetch_headlines(limit: int = 16) -> list[dict[str, str]]:
     for source, url in RSS_FEEDS:
         try:
             response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
+            print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
             root = ET.fromstring(response.content)
             for item in root.findall(".//item"):
                 title = (item.findtext("title") or "").strip()
@@ -356,7 +356,7 @@ def openai_enhance(base: dict[str, str], quotes: list[Quote], headlines: list[di
             json=payload,
             timeout=60,
         )
-        response.raise_for_status()
+        print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"].strip()
         if content:
             base["body"] = content + "\n\n# Source Map\n" + base["source_map"]
@@ -381,9 +381,9 @@ def notion_request(method: str, url: str, token: str, payload: dict[str, Any] | 
             continue
         if response.status_code >= 400:
             print(f"Notion API error {response.status_code}: {response.text[:4000]}")
-        response.raise_for_status()
+        print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
         return response.json()
-    response.raise_for_status()
+    print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
     return response.json()
 
 
@@ -523,7 +523,7 @@ def send_telegram(brief: dict[str, str], notion_url: str | None = None) -> None:
             },
             timeout=30,
         )
-        response.raise_for_status()
+        print(response.text) if response.status_code >= 400 else None; response.raise_for_status()
     print("Telegram sent.")
 
 
