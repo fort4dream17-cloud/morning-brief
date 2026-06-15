@@ -1,11 +1,1 @@
-name: Telegram Test
-on: workflow_dispatchjobs:
-  send-test:
-      runs-on: ubuntu-latest
-          steps:
-                - name: Send test
-                        env:
-                                  T: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-                                            C: ${{ secrets.TELEGRAM_CHAT_ID }}
-                                                    run: curl -sS --fail -X POST "https://api.telegram.org/bot$T/sendMessage" -d "chat_id=$C" --data-urlencode "text=Global Morning Brief automation test - sent by @Teletelerobot_bot"
-                                                    
+"name":"Telegram Test","on":{"workflow_dispatch":{}},"jobs":{"send-test":{"runs-on":"ubuntu-latest","steps":[{"name":"Send test","env":{"T":"${{ secrets.TELEGRAM_BOT_TOKEN }}","C":"${{ secrets.TELEGRAM_CHAT_ID }}"},"run":"curl -sS --fail -X POST \"https://api.telegram.org/bot$T/sendMessage\" -d \"chat_id=$C\" --data-urlencode \"text=Global Morning Brief automation test - sent by @Teletelerobot_bot\""}]}}}
