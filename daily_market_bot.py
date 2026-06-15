@@ -305,8 +305,8 @@ def _validate_env() -> bool:
     required = {
         "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
         "CHAT_ID": CHAT_ID,
-        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-        "FRED_API_KEY": FRED_API_KEY,
+
+
     }
     missing = [k for k, v in required.items() if not (v and str(v).strip())]
     if missing:
