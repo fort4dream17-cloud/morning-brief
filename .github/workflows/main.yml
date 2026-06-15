@@ -1,36 +1,35 @@
-name: US Daily Market Bot
+ame: US Daily Market Bot
 
 on:
   schedule:
-    # 22:00 UTC Monday-Friday = 07:00 KST Tuesday-Saturday
-    - cron: "0 22 * * 1-5"
-  workflow_dispatch:
+      # 22:00 UTC Monday-Friday = 07:00 KST Tuesday-Saturday
+          - cron: "0 22 * * 1-5"
+            workflow_dispatch:
 
-jobs:
-  daily-market:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
+            jobs:
+              daily-market:
+                  runs-on: ubuntu-latest
+                      timeout-minutes: 45
+                          permissions:
+                                contents: read
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+                                    steps:
+                                          - name: Check out repository
+                                                  uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
+                                                        - name: Set up Python
+                                                                uses: actions/setup-python@v5
+                                                                        with:
+                                                                                  python-version: "3.11"
+                                                                                            cache: pip
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Send US market briefing
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
-          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
-        run: python openai_runner.py market
+                                                                                                  - name: Install dependencies
+                                                                                                          run: pip install -r requirements.txt
+                                                                                                          
+                                                                                                                - name: Send US market briefing without AI API
+                                                                                                                        env:
+                                                                                                                                  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+                                                                                                                                            CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+                                                                                                                                                      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+                                                                                                                                                              run: python openai_runner.py market
+                                                                                                                                                              
