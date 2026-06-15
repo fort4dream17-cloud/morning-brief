@@ -302,7 +302,12 @@ _TECH_SYSTEM = """당신은 글로벌 반도체·AI·테크 산업 전문 애널
 
 # ─── 유틸 ────────────────────────────────────────────────────────────────────
 def _validate_env() -> bool:
-    required = {"TELEGRAM_TOKEN": TELEGRAM_TOKEN, "CHAT_ID": CHAT_ID}
+    required = {
+        "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
+        "CHAT_ID": CHAT_ID,
+        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
+        "FRED_API_KEY": FRED_API_KEY,
+    }
     missing = [k for k, v in required.items() if not (v and str(v).strip())]
     if missing:
         logger.error("필수 환경 변수 없음: %s", ", ".join(missing))
@@ -1938,7 +1943,7 @@ def run_news_part() -> None:
 # ─── 진입점 ──────────────────────────────────────────────────────────────────
 def main() -> None:
     if not _validate_env():
-        return
+        raise RuntimeError("필수 환경 변수가 누락되어 브리핑 생성을 중단합니다.")
     run_us_market_part()
     run_summary_part()
     run_news_part()
