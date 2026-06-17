@@ -128,10 +128,75 @@ def openai_sort_and_summarize_news(
             line = line.strip()
             if not line:
                 continue
-            match = re.match(r"^\s*(\d+)\s*(?:[|,.\-:])\s*(.+?)\s*$", line)
+            match = re.match(
+                r"^\s*(?:idx|item|news|no\.?|원문|뉴스)?\s*#?\s*(\d{1,3})\s*(?:번)?\s*(?:[|,.\-:：)]|\s+)\s*(.+?)\s*$",
+                line,
+                re.IGNORECASE,
+            )
             if match:
                 pairs.append((int(match.group(1)), match.group(2).strip()))
         return pairs
+
+    def heuristic_rank(source_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        priority_groups = [
+            (
+                100,
+                [
+                    "fed", "fomc", "powell", "yield", "treasury", "rate", "rates",
+                    "inflation", "cpi", "ppi", "jobs", "payroll", "ecb", "boj",
+                    "central bank", "dollar", "dxy",
+                ],
+            ),
+            (
+                85,
+                [
+                    "war", "iran", "israel", "ukraine", "russia", "china", "tariff",
+                    "trade", "sanction", "hormuz", "oil", "opec", "geopolitical",
+                ],
+            ),
+            (
+                70,
+                [
+                    "earnings", "guidance", "revenue", "profit", "forecast", "upgrade",
+                    "downgrade", "merger", "acquisition", "m&a", "buyback",
+                ],
+            ),
+            (
+                60,
+                [
+                    "nvidia", "nvda", "ai", "semiconductor", "chip", "tsmc", "amd",
+                    "broadcom", "micron", "memory", "datacenter", "data center",
+                    "energy", "power", "uranium",
+                ],
+            ),
+            (
+                40,
+                [
+                    "gdp", "retail sales", "housing", "consumer", "manufacturing",
+                    "ism", "pmi", "credit", "debt", "deficit",
+                ],
+            ),
+        ]
+        ranked = []
+        for pos, item in enumerate(source_items):
+            text = " ".join(
+                [
+                    str(item.get("source") or ""),
+                    str(item.get("title") or ""),
+                    str(item.get("description") or ""),
+                ]
+            ).lower()
+            score = 0
+            for weight, keywords in priority_groups:
+                hits = sum(1 for keyword in keywords if keyword in text)
+                if hits:
+                    score += weight + min(hits, 4) * 5
+            source = str(item.get("source") or "").lower()
+            if any(name in source for name in ["bloomberg", "reuters", "cnbc", "marketwatch", "ft"]):
+                score += 8
+            ranked.append((score, -pos, item))
+        ranked.sort(reverse=True, key=lambda row: (row[0], row[1]))
+        return [row[2] for row in ranked]
 
     raw = openai_call(prompt, max_tokens=5000, system=KOREAN_SYSTEM) or ""
     try:
@@ -165,9 +230,9 @@ def openai_sort_and_summarize_news(
         bot.logger.info("OpenAI news pipe ranking parsed: %d items", len(ordered))
         return ordered[:top_n]
 
-    bot.logger.warning("OpenAI news ranking parse failed; translating first items one by one")
+    bot.logger.warning("OpenAI news ranking parse failed; using heuristic ranking + one-by-one translation")
     fallback: list[dict[str, Any]] = []
-    for it in items[:top_n]:
+    for it in heuristic_rank(items)[:top_n]:
         title = str(it.get("title") or "").strip()
         source = str(it.get("source") or "").strip()
         prompt_one = (
