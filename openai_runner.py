@@ -74,7 +74,7 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
 def openai_sort_and_summarize_news(
     items: list[dict[str, Any]], top_n: int
 ) -> list[dict[str, Any]]:
-    """Rank news and force Korean summaries with a JSON contract."""
+    """Rank news and force Korean summaries with robust parse fallbacks."""
     if not CLIENT or not items:
         return [{**normalize_item(it), "summary": it.get("title", "")} for it in items[:top_n]]
 
@@ -100,29 +100,72 @@ def openai_sort_and_summarize_news(
         f"NEWS_ITEMS_JSON:\n{json.dumps(rows, ensure_ascii=False)}"
     )
 
-    raw = openai_call(prompt, max_tokens=5000, system=KOREAN_SYSTEM) or ""
-    match = re.search(r"\[[\s\S]*\]", raw)
-    ordered: list[dict[str, Any]] = []
-    seen: set[int] = set()
-
-    if match:
-        try:
-            parsed = json.loads(match.group(0))
-            for entry in parsed:
-                idx = int(entry.get("idx", 0))
-                summary = str(entry.get("summary") or "").strip()
-                if 1 <= idx <= len(items) and idx not in seen and summary:
-                    seen.add(idx)
-                    base = normalize_item(items[idx - 1])
-                    base["summary"] = summary[:180]
-                    ordered.append(base)
-        except Exception as exc:
-            bot.logger.warning("OpenAI news JSON parse failed: %s", exc)
-
-    if ordered:
+    def build_ordered(pairs: list[tuple[int, str]]) -> list[dict[str, Any]]:
+        ordered: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for idx, summary in pairs:
+            summary = str(summary or "").strip()
+            if 1 <= idx <= len(items) and idx not in seen and summary:
+                seen.add(idx)
+                base = normalize_item(items[idx - 1])
+                base["summary"] = summary[:180]
+                ordered.append(base)
         return ordered[:top_n]
 
-    bot.logger.warning("OpenAI news summary fallback used; translating titles one by one")
+    def parse_json_pairs(raw_text: str) -> list[tuple[int, str]]:
+        match = re.search(r"\[[\s\S]*\]", raw_text)
+        if not match:
+            return []
+        parsed = json.loads(match.group(0))
+        pairs: list[tuple[int, str]] = []
+        for entry in parsed:
+            pairs.append((int(entry.get("idx", 0)), str(entry.get("summary") or "")))
+        return pairs
+
+    def parse_line_pairs(raw_text: str) -> list[tuple[int, str]]:
+        pairs: list[tuple[int, str]] = []
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            match = re.match(r"^\s*(\d+)\s*(?:[|,.\-:])\s*(.+?)\s*$", line)
+            if match:
+                pairs.append((int(match.group(1)), match.group(2).strip()))
+        return pairs
+
+    raw = openai_call(prompt, max_tokens=5000, system=KOREAN_SYSTEM) or ""
+    try:
+        ordered = build_ordered(parse_json_pairs(raw))
+    except Exception as exc:
+        bot.logger.warning("OpenAI news JSON parse failed: %s", exc)
+        ordered = []
+
+    if ordered:
+        bot.logger.info("OpenAI news JSON ranking parsed: %d items", len(ordered))
+        return ordered[:top_n]
+
+    compact_lines = []
+    for i, it in enumerate(items[:120], 1):
+        compact_lines.append(
+            f"{i}. [{it.get('source') or ''}] {it.get('title') or ''}"
+        )
+    pipe_prompt = (
+        f"Rank the top {top_n} market-moving news items for Korean equity investors. "
+        "Output exactly one item per line in this format: original_number|Korean summary. "
+        "The Korean summary must be one natural Korean sentence. "
+        "Do not output JSON, bullets, code fences, headings, explanations, or English-only titles. "
+        "Do not add facts, numbers, or links.\n\n"
+        "Priority order: Fed/rates/inflation/central banks first; geopolitics/trade/tariffs/sanctions second; "
+        "major earnings/M&A/guidance third; semiconductors/AI/energy fourth; other macro/industry last.\n\n"
+        "NEWS LIST:\n" + "\n".join(compact_lines)
+    )
+    raw_pipe = openai_call(pipe_prompt, max_tokens=3500, system=KOREAN_SYSTEM) or ""
+    ordered = build_ordered(parse_line_pairs(raw_pipe))
+    if ordered:
+        bot.logger.info("OpenAI news pipe ranking parsed: %d items", len(ordered))
+        return ordered[:top_n]
+
+    bot.logger.warning("OpenAI news ranking parse failed; translating first items one by one")
     fallback: list[dict[str, Any]] = []
     for it in items[:top_n]:
         title = str(it.get("title") or "").strip()
