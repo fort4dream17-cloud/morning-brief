@@ -41,8 +41,6 @@ def openai_call(prompt: str, max_tokens: int = 4096, system: str | None = None) 
 
 def resolve_telegram_chat_id() -> str | None:
     configured = (os.getenv("CHAT_ID") or "").strip()
-    if configured.lstrip("-").isdigit():
-        return configured
     token = (os.getenv("TELEGRAM_TOKEN") or "").strip()
     if not token:
         return configured or None
@@ -56,6 +54,10 @@ def resolve_telegram_chat_id() -> str | None:
             event = update.get("message") or update.get("channel_post")
             chat_id = (event or {}).get("chat", {}).get("id")
             if chat_id is not None:
+                if configured and str(chat_id) != configured:
+                    bot.logger.warning(
+                        "TELEGRAM_CHAT_ID differs from latest bot chat; using latest chat_id"
+                    )
                 return str(chat_id)
     except Exception as exc:
         bot.logger.warning("Could not auto-resolve Telegram chat ID: %s", exc)
