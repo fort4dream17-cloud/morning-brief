@@ -1,1 +1,69 @@
-{"name":"US Daily Market Bot","on":{"schedule":[{"cron":"30 20 * * 1-5"},{"cron":"30 21 * * 1-5"}],"workflow_dispatch":{}},"jobs":{"daily-market":{"runs-on":"ubuntu-latest","timeout-minutes":45,"permissions":{"contents":"read"},"steps":[{"name":"Check New York market-close time","id":"market_time","run":"python -c 'from datetime import datetime; from zoneinfo import ZoneInfo; import os; now=datetime.now(ZoneInfo(\"America/New_York\")); open(os.environ[\"GITHUB_OUTPUT\"],\"a\").write(\"should_run=\"+(\"true\" if now.hour==16 else \"false\")+\"\\n\")'"},{"name":"Check out repository","if":"github.event_name == 'workflow_dispatch' || steps.market_time.outputs.should_run == 'true'","uses":"actions/checkout@v4"},{"name":"Set up Python","if":"github.event_name == 'workflow_dispatch' || steps.market_time.outputs.should_run == 'true'","uses":"actions/setup-python@v5","with":{"python-version":"3.11","cache":"pip"}},{"name":"Install dependencies","if":"github.event_name == 'workflow_dispatch' || steps.market_time.outputs.should_run == 'true'","run":"pip install -r requirements.txt"},{"name":"Send Korean US market briefing with OpenAI","if":"github.event_name == 'workflow_dispatch' || steps.market_time.outputs.should_run == 'true'","env":{"TELEGRAM_TOKEN":"${{ secrets.TELEGRAM_BOT_TOKEN }}","CHAT_ID":"${{ secrets.TELEGRAM_CHAT_ID }}","FRED_API_KEY":"${{ secrets.FRED_API_KEY }}","OPENAI_API_KEY":"${{ secrets.OPENAI_API_KEY }}","OPENAI_MODEL":"gpt-5-mini"},"run":"python openai_runner.py"}]}}}
+name: US Daily Market Bot
+
+on:
+  schedule:
+    # US market close + 30 minutes. GitHub cron uses UTC.
+    # EDT: 20:30 UTC / EST: 21:30 UTC
+    - cron: "30 20 * * 1-5"
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  daily-market:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Decide scheduled run
+        id: market_time
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          import os
+
+          event_name = os.getenv("EVENT_NAME", "")
+          event_schedule = os.getenv("EVENT_SCHEDULE", "")
+          ny_now = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
+          expected_schedule = "30 20 * * 1-5" if ny_now.dst().total_seconds() else "30 21 * * 1-5"
+
+          should_run = event_name == "workflow_dispatch" or event_schedule == expected_schedule
+          reason = (
+              "manual run"
+              if event_name == "workflow_dispatch"
+              else f"schedule={event_schedule}, expected={expected_schedule}, ny_now={ny_now:%Y-%m-%d %H:%M %Z}"
+          )
+          print(f"should_run={should_run}; {reason}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"should_run={'true' if should_run else 'false'}\n")
+          PY
+
+      - name: Check out repository
+        if: steps.market_time.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.market_time.outputs.should_run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.market_time.outputs.should_run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Send Korean US market briefing with OpenAI
+        if: steps.market_time.outputs.should_run == 'true'
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-mini
+        run: python openai_runner.py
