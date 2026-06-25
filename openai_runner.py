@@ -42,11 +42,23 @@ def openai_call(prompt: str, max_tokens: int = 4096, system: str | None = None) 
 def resolve_telegram_chat_id() -> str | None:
     configured = (os.getenv("CHAT_ID") or "").strip()
     token = (os.getenv("TELEGRAM_TOKEN") or "").strip()
-    if configured:
-        bot.logger.info("Using configured Telegram chat ID")
-        return configured
     if not token:
-        return None
+        return configured or None
+    if configured:
+        try:
+            response = requests.get(
+                f"https://api.telegram.org/bot{token}/getChat",
+                params={"chat_id": configured},
+                timeout=15,
+            )
+            if response.ok and response.json().get("ok") is True:
+                bot.logger.info("Using configured Telegram chat ID")
+                return configured
+            bot.logger.warning(
+                "Configured Telegram chat ID is invalid; using the latest bot chat"
+            )
+        except Exception as exc:
+            bot.logger.warning("Could not validate configured Telegram chat ID: %s", exc)
     try:
         response = requests.get(
             f"https://api.telegram.org/bot{token}/getUpdates", timeout=15
@@ -57,6 +69,7 @@ def resolve_telegram_chat_id() -> str | None:
             event = update.get("message") or update.get("channel_post")
             chat_id = (event or {}).get("chat", {}).get("id")
             if chat_id is not None:
+                bot.logger.info("Using latest Telegram bot chat")
                 return str(chat_id)
     except Exception as exc:
         bot.logger.warning("Could not auto-resolve Telegram chat ID: %s", exc)
