@@ -1,4 +1,4 @@
-"""Run the existing market bot with OpenAI and resolve the Telegram chat ID."""
+"""Run the existing market bot with OpenAI and strict Telegram delivery checks."""
 
 import json
 import os
@@ -42,8 +42,11 @@ def openai_call(prompt: str, max_tokens: int = 4096, system: str | None = None) 
 def resolve_telegram_chat_id() -> str | None:
     configured = (os.getenv("CHAT_ID") or "").strip()
     token = (os.getenv("TELEGRAM_TOKEN") or "").strip()
+    if configured:
+        bot.logger.info("Using configured Telegram chat ID")
+        return configured
     if not token:
-        return configured or None
+        return None
     try:
         response = requests.get(
             f"https://api.telegram.org/bot{token}/getUpdates", timeout=15
@@ -54,14 +57,71 @@ def resolve_telegram_chat_id() -> str | None:
             event = update.get("message") or update.get("channel_post")
             chat_id = (event or {}).get("chat", {}).get("id")
             if chat_id is not None:
-                if configured and str(chat_id) != configured:
-                    bot.logger.warning(
-                        "TELEGRAM_CHAT_ID differs from latest bot chat; using latest chat_id"
-                    )
                 return str(chat_id)
     except Exception as exc:
         bot.logger.warning("Could not auto-resolve Telegram chat ID: %s", exc)
-    return configured or None
+    return None
+
+
+def _telegram_post(message: str, parse_mode: str = "HTML") -> None:
+    token = (os.getenv("TELEGRAM_TOKEN") or "").strip()
+    chat_id = str(bot.CHAT_ID or "").strip()
+    if not token or not chat_id:
+        raise RuntimeError("TELEGRAM_TOKEN or CHAT_ID is missing")
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": True,
+    }
+    response = requests.post(url, json=payload, timeout=bot.TELEGRAM_TIMEOUT)
+    if response.status_code != 200 and parse_mode:
+        payload["parse_mode"] = ""
+        response = requests.post(url, json=payload, timeout=bot.TELEGRAM_TIMEOUT)
+
+    try:
+        result = response.json()
+    except ValueError:
+        result = {}
+    if response.status_code != 200 or result.get("ok") is not True:
+        description = result.get("description") or response.text[:300]
+        raise RuntimeError(
+            f"Telegram send failed ({response.status_code}): {description}"
+        )
+
+
+def strict_send_telegram(message: str) -> None:
+    if not message or len(message.strip()) < bot.MIN_MESSAGE_LEN:
+        return
+    _telegram_post(message)
+
+
+def strict_send_telegram_plain(message: str) -> None:
+    if not message or len(message.strip()) < bot.MIN_MESSAGE_LEN:
+        return
+
+    formatted = bot._apply_bold_headers(message)
+    max_len = 4000
+    chunks: list[str] = []
+    current = ""
+    for line in formatted.splitlines(keepends=True):
+        if len(current) + len(line) > max_len and current:
+            chunks.append(current.rstrip())
+            current = ""
+        current += line
+    if current.strip():
+        chunks.append(current.rstrip())
+
+    for index, chunk in enumerate(chunks):
+        text = chunk if index == 0 else "(계속)\n" + chunk
+        _telegram_post(text)
+
+
+def install_telegram_overrides() -> None:
+    bot.send_telegram = strict_send_telegram
+    bot.send_telegram_plain = strict_send_telegram_plain
 
 
 def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -285,6 +345,7 @@ def install_openai_overrides() -> None:
 
 def main() -> None:
     bot.CHAT_ID = resolve_telegram_chat_id()
+    install_telegram_overrides()
     install_openai_overrides()
     if len(sys.argv) > 1 and sys.argv[1] == "tech":
         bot.run_tech_news_bot()
