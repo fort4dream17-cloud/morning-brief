@@ -3,7 +3,8 @@ name: US Daily Market Bot
 on:
   schedule:
     # US market close + 30 minutes. GitHub cron uses UTC.
-    # EDT: 20:30 UTC / EST: 21:30 UTC
+    # EDT: 20:30 UTC = 05:30 KST / EST: 21:30 UTC = 06:30 KST.
+    # GitHub scheduled runs can be delayed, so the job also checks New York time.
     - cron: "30 20 * * 1-5"
     - cron: "30 21 * * 1-5"
   workflow_dispatch:
@@ -32,11 +33,21 @@ jobs:
           ny_now = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
           expected_schedule = "30 20 * * 1-5" if ny_now.dst().total_seconds() else "30 21 * * 1-5"
 
-          should_run = event_name == "workflow_dispatch" or event_schedule == expected_schedule
+          ny_minutes = ny_now.hour * 60 + ny_now.minute
+          near_market_close = (16 * 60 + 20) <= ny_minutes <= (17 * 60 + 45)
+          market_weekday = ny_now.weekday() < 5
+
+          should_run = event_name == "workflow_dispatch" or (
+              event_schedule == expected_schedule and near_market_close and market_weekday
+          )
           reason = (
               "manual run"
               if event_name == "workflow_dispatch"
-              else f"schedule={event_schedule}, expected={expected_schedule}, ny_now={ny_now:%Y-%m-%d %H:%M %Z}"
+              else (
+                  f"schedule={event_schedule}, expected={expected_schedule}, "
+                  f"ny_now={ny_now:%Y-%m-%d %H:%M %Z}, "
+                  f"near_market_close={near_market_close}, market_weekday={market_weekday}"
+              )
           )
           print(f"should_run={should_run}; {reason}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
