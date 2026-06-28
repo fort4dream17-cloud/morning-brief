@@ -7,6 +7,11 @@ on:
     - cron: "5 22 * * 5"
     - cron: "25 22 * * 5"
   workflow_dispatch:
+    inputs:
+      cache_chat_only:
+        description: "Cache Telegram chat without sending a report"
+        type: boolean
+        default: false
 
 jobs:
   weekly-market:
@@ -46,6 +51,20 @@ jobs:
         if: steps.weekly_time.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
+      - name: Restore Telegram destination
+        if: steps.weekly_time.outputs.should_run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .telegram-chat-id
+          key: telegram-chat-id-v1
+
+      - name: Resolve Telegram destination
+        if: steps.weekly_time.outputs.should_run == 'true'
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_chat.py
+
       - name: Build weekly delivery key
         if: steps.weekly_time.outputs.should_run == 'true' && github.event_name == 'schedule'
         id: weekly_key
@@ -63,6 +82,7 @@ jobs:
       - name: Set up Python
         if: >-
           steps.weekly_time.outputs.should_run == 'true' &&
+          inputs.cache_chat_only != true &&
           (github.event_name == 'workflow_dispatch' ||
           steps.weekly_cache.outputs.cache-hit != 'true')
         uses: actions/setup-python@v5
@@ -73,6 +93,7 @@ jobs:
       - name: Install dependencies
         if: >-
           steps.weekly_time.outputs.should_run == 'true' &&
+          inputs.cache_chat_only != true &&
           (github.event_name == 'workflow_dispatch' ||
           steps.weekly_cache.outputs.cache-hit != 'true')
         run: pip install -r requirements.txt
@@ -80,11 +101,11 @@ jobs:
       - name: Send weekly review
         if: >-
           steps.weekly_time.outputs.should_run == 'true' &&
+          inputs.cache_chat_only != true &&
           (github.event_name == 'workflow_dispatch' ||
           steps.weekly_cache.outputs.cache-hit != 'true')
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5-mini
