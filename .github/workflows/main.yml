@@ -51,6 +51,20 @@ jobs:
         if: steps.market_time.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
+      - name: Restore Telegram destination
+        if: steps.market_time.outputs.should_run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .telegram-chat-id
+          key: telegram-chat-id-v1
+
+      - name: Resolve Telegram destination
+        if: steps.market_time.outputs.should_run == 'true'
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_chat.py
+
       - name: Build daily delivery key
         if: steps.market_time.outputs.should_run == 'true' && github.event_name == 'schedule'
         id: daily_key
@@ -89,7 +103,6 @@ jobs:
           steps.daily_cache.outputs.cache-hit != 'true')
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5-mini
