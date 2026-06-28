@@ -1,0 +1,98 @@
+name: Global Weekly Market Review
+
+on:
+  schedule:
+    # Friday 22:05/22:25 UTC = Saturday 07:05/07:25 KST.
+    # The second entry is a backup. A weekly cache prevents duplicate delivery.
+    - cron: "5 22 * * 5"
+    - cron: "25 22 * * 5"
+  workflow_dispatch:
+
+jobs:
+  weekly-market:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check Korean delivery window
+        id: weekly_time
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          import os
+
+          event_name = os.getenv("EVENT_NAME", "")
+          kst_now = datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Seoul"))
+          minutes = kst_now.hour * 60 + kst_now.minute
+          scheduled_window = (
+              kst_now.weekday() == 5
+              and (6 * 60 + 45) <= minutes <= (8 * 60 + 30)
+          )
+          should_run = event_name == "workflow_dispatch" or scheduled_window
+          print(
+              f"should_run={should_run}; event={event_name}; "
+              f"kst_now={kst_now:%Y-%m-%d %H:%M %Z}"
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"should_run={'true' if should_run else 'false'}\n")
+          PY
+
+      - name: Check out repository
+        if: steps.weekly_time.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Build weekly delivery key
+        if: steps.weekly_time.outputs.should_run == 'true' && github.event_name == 'schedule'
+        id: weekly_key
+        run: |
+          echo "key=$(TZ=Asia/Seoul date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this week was already sent
+        if: steps.weekly_time.outputs.should_run == 'true' && github.event_name == 'schedule'
+        id: weekly_cache
+        uses: actions/cache@v4
+        with:
+          path: .weekly-delivered
+          key: weekly-delivered-${{ steps.weekly_key.outputs.key }}
+
+      - name: Set up Python
+        if: >-
+          steps.weekly_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.weekly_cache.outputs.cache-hit != 'true')
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: >-
+          steps.weekly_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.weekly_cache.outputs.cache-hit != 'true')
+        run: pip install -r requirements.txt
+
+      - name: Send weekly review
+        if: >-
+          steps.weekly_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.weekly_cache.outputs.cache-hit != 'true')
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-mini
+        run: python weekly_bot.py
+
+      - name: Mark scheduled delivery complete
+        if: >-
+          success() && github.event_name == 'schedule' &&
+          steps.weekly_time.outputs.should_run == 'true' &&
+          steps.weekly_cache.outputs.cache-hit != 'true'
+        run: touch .weekly-delivered
