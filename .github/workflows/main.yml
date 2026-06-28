@@ -2,11 +2,14 @@ name: US Daily Market Bot
 
 on:
   schedule:
-    # US market close + 30 minutes. GitHub cron uses UTC.
-    # EDT: 20:30 UTC = 05:30 KST / EST: 21:30 UTC = 06:30 KST.
-    # GitHub scheduled runs can be delayed, so the job also checks New York time.
-    - cron: "30 20 * * 1-5"
-    - cron: "30 21 * * 1-5"
+    # Multiple attempts improve GitHub scheduler reliability.
+    # The New York time check and daily cache prevent duplicate delivery.
+    # EDT candidates: 05:31/05:46/06:01 KST.
+    - cron: "31,46 20 * * 1-5"
+    - cron: "1 21 * * 1-5"
+    # EST candidates: 06:31/06:46/07:01 KST.
+    - cron: "31,46 21 * * 1-5"
+    - cron: "1 22 * * 1-5"
   workflow_dispatch:
 
 jobs:
@@ -21,7 +24,6 @@ jobs:
         id: market_time
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           python - <<'PY'
           from datetime import datetime, timezone
@@ -29,27 +31,18 @@ jobs:
           import os
 
           event_name = os.getenv("EVENT_NAME", "")
-          event_schedule = os.getenv("EVENT_SCHEDULE", "")
           ny_now = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
-          expected_schedule = "30 20 * * 1-5" if ny_now.dst().total_seconds() else "30 21 * * 1-5"
-
           ny_minutes = ny_now.hour * 60 + ny_now.minute
-          near_market_close = (16 * 60 + 20) <= ny_minutes <= (17 * 60 + 45)
+          near_market_close = (16 * 60 + 20) <= ny_minutes <= (17 * 60 + 20)
           market_weekday = ny_now.weekday() < 5
-
           should_run = event_name == "workflow_dispatch" or (
-              event_schedule == expected_schedule and near_market_close and market_weekday
+              near_market_close and market_weekday
           )
-          reason = (
-              "manual run"
-              if event_name == "workflow_dispatch"
-              else (
-                  f"schedule={event_schedule}, expected={expected_schedule}, "
-                  f"ny_now={ny_now:%Y-%m-%d %H:%M %Z}, "
-                  f"near_market_close={near_market_close}, market_weekday={market_weekday}"
-              )
+          print(
+              f"should_run={should_run}; event={event_name}; "
+              f"ny_now={ny_now:%Y-%m-%d %H:%M %Z}; "
+              f"near_market_close={near_market_close}"
           )
-          print(f"should_run={should_run}; {reason}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"should_run={'true' if should_run else 'false'}\n")
           PY
@@ -58,19 +51,42 @@ jobs:
         if: steps.market_time.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
+      - name: Build daily delivery key
+        if: steps.market_time.outputs.should_run == 'true' && github.event_name == 'schedule'
+        id: daily_key
+        run: |
+          echo "key=$(TZ=America/New_York date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this market day was already sent
+        if: steps.market_time.outputs.should_run == 'true' && github.event_name == 'schedule'
+        id: daily_cache
+        uses: actions/cache@v4
+        with:
+          path: .daily-delivered
+          key: daily-delivered-${{ steps.daily_key.outputs.key }}
+
       - name: Set up Python
-        if: steps.market_time.outputs.should_run == 'true'
+        if: >-
+          steps.market_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.daily_cache.outputs.cache-hit != 'true')
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
-        if: steps.market_time.outputs.should_run == 'true'
+        if: >-
+          steps.market_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.daily_cache.outputs.cache-hit != 'true')
         run: pip install -r requirements.txt
 
       - name: Send Korean US market briefing with OpenAI
-        if: steps.market_time.outputs.should_run == 'true'
+        if: >-
+          steps.market_time.outputs.should_run == 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          steps.daily_cache.outputs.cache-hit != 'true')
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -78,3 +94,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5-mini
         run: python openai_runner.py
+
+      - name: Mark scheduled delivery complete
+        if: >-
+          success() && github.event_name == 'schedule' &&
+          steps.market_time.outputs.should_run == 'true' &&
+          steps.daily_cache.outputs.cache-hit != 'true'
+        run: touch .daily-delivered
