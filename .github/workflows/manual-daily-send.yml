@@ -1,0 +1,46 @@
+name: One-time Daily Market Send
+
+on:
+  push:
+    paths:
+      - ".github/workflows/manual-daily-send.yml"
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Restore Telegram destination
+        uses: actions/cache/restore@v4
+        with:
+          path: .telegram-chat-id
+          key: telegram-chat-id-v1
+
+      - name: Resolve Telegram destination
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_chat.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send daily market briefing
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-mini
+        run: python openai_runner.py
