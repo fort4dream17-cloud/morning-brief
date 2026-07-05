@@ -33,7 +33,9 @@ jobs:
           event_name = os.getenv("EVENT_NAME", "")
           ny_now = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
           ny_minutes = ny_now.hour * 60 + ny_now.minute
-          near_market_close = (16 * 60 + 20) <= ny_minutes <= (17 * 60 + 20)
+          # GitHub scheduled jobs can arrive several hours late. The daily
+          # delivery cache below still limits successful sends to once a day.
+          near_market_close = (16 * 60 + 20) <= ny_minutes <= (20 * 60 + 30)
           market_weekday = ny_now.weekday() < 5
           should_run = event_name == "workflow_dispatch" or (
               near_market_close and market_weekday
